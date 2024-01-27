@@ -5,10 +5,8 @@ use rand::thread_rng;
 use rand::{rngs::ThreadRng, Rng};
 use std::ops::{Add, AddAssign, Sub};
 use wasm_bindgen::prelude::*;
+use web_sys::console;
 use yew::prelude::*;
-use yew::services::keyboard::{KeyListenerHandle, KeyboardService};
-use yew::services::render::{RenderService, RenderTask};
-use yew::utils::document;
 
 #[derive(Debug, Copy, Clone)]
 struct Vec2 {
@@ -546,10 +544,9 @@ mod tests {
 }
 
 pub struct Model {
-    link: ComponentLink<Self>,
     grid: Grid,
     #[allow(dead_code)]
-    keyboard_event_listener: KeyListenerHandle,
+    keyboard_event_listener: Callback<KeyboardEvent>,
     current_render: i32,
     touch_start: Option<TouchEvent>,
 }
@@ -570,14 +567,14 @@ impl Component for Model {
     type Message = Msg;
     type Properties = ();
 
-    fn create(_: Self::Properties, link: ComponentLink<Self>) -> Self {
-        let keyboard_event_listener = KeyboardService::register_key_down(
-            &document(),
-            (&link).callback(|e: KeyboardEvent| Msg::KeyboardEvent(e)),
-        );
+    fn create(ctx: &Context<Self>) -> Self {
+        let link = ctx.link().clone();
+        let keyboard_event_listener = Callback::from(move |e: KeyboardEvent| {
+            e.prevent_default();
+            link.send_message(Msg::KeyboardEvent(e))
+        });
 
         Self {
-            link,
             grid: Grid::default(),
             touch_start: None,
             current_render: 0,
@@ -585,7 +582,7 @@ impl Component for Model {
         }
     }
 
-    fn update(&mut self, msg: Self::Message) -> ShouldRender {
+    fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::KeyboardEvent(e) => match e.key_code() {
                 37 => self.move_in(Direction::Left),
@@ -602,6 +599,7 @@ impl Component for Model {
                 return false;
             }
             Msg::TouchEnd(touches_end) => {
+                console::log_1(&"touchend".into());
                 let touch_start = self
                     .touch_start
                     .as_ref()
@@ -625,16 +623,17 @@ impl Component for Model {
         true
     }
 
-    fn change(&mut self, _props: Self::Properties) -> ShouldRender {
-        true
-    }
+    fn view(&self, ctx: &Context<Self>) -> Html {
+        let ontouchstart = ctx.link().callback(Msg::TouchStart);
+        let ontouchend = ctx.link().callback(Msg::TouchEnd);
 
-    fn view(&self) -> Html {
+        let onkeydown = self.keyboard_event_listener.clone();
+
         html! {
-            <div class="grid-wrapper" ontouchstart=self.link.callback(Msg::TouchStart) ontouchend=self.link.callback(Msg::TouchEnd)>
-                <div class="grid" key=self.current_render>
+            <div class="grid-wrapper" ontouchstart={ontouchstart} ontouchend={ontouchend} onkeydown={onkeydown} tabindex="0">
+                <div class="grid" key={self.current_render}>
                 { for (0..16).map(|_| { html! { <div class="cell"></div> }}) }
-                { for self.grid.tiles().map(|(position, tile)| html! { <TileComponent position=position tile=tile />} ) }
+                { for self.grid.tiles().map(|(position, tile)| html! { <TileComponent {position} {tile} />} ) }
                 </div>
             </div>
         }
@@ -644,8 +643,6 @@ impl Component for Model {
 struct TileComponent {
     tile: Tile,
     position: Position,
-    #[allow(dead_code)]
-    timeout_task: Option<RenderTask>,
 }
 
 impl TileComponent {
@@ -664,7 +661,7 @@ impl TileComponent {
     }
 }
 
-#[derive(Properties, Clone)]
+#[derive(Properties, Clone, PartialEq)]
 struct TileComponentProps {
     tile: Tile,
     position: Position,
@@ -678,9 +675,9 @@ impl Component for TileComponent {
     type Message = TileMsg;
     type Properties = TileComponentProps;
 
-    fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
+    fn create(ctx: &Context<Self>) -> Self {
+        let props = ctx.props();
         let mut position = props.position;
-        let mut timeout_task = None;
 
         match (props.tile.state, props.tile.previous_position) {
             (TileState::Merged, _) => {}
@@ -689,21 +686,22 @@ impl Component for TileComponent {
 
                 let actual_position = props.position;
 
-                timeout_task = Some(RenderService::request_animation_frame(
-                    link.callback(move |_| TileMsg::ActualPosition(actual_position)),
-                ));
+                ctx.link()
+                    .send_future(async move { TileMsg::ActualPosition(actual_position) });
             }
             _ => {}
         }
 
         Self {
-            timeout_task,
             tile: props.tile,
             position,
         }
     }
 
-    fn update(&mut self, msg: Self::Message) -> ShouldRender {
+    fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
+        self.tile = ctx.props().tile;
+        self.position = ctx.props().position;
+
         match msg {
             TileMsg::ActualPosition(position) => {
                 self.position = position;
@@ -713,16 +711,9 @@ impl Component for TileComponent {
         true
     }
 
-    fn change(&mut self, _props: Self::Properties) -> ShouldRender {
-        self.tile = _props.tile;
-        self.position = _props.position;
-
-        true
-    }
-
-    fn view(&self) -> Html {
+    fn view(&self, _ctx: &Context<Self>) -> Html {
         html! {
-            <div class=self.class_name()>
+            <div class={self.class_name()}>
                 <div class="tile-inner">
                     { self.tile.number.to_string() }
                 </div>
@@ -733,10 +724,9 @@ impl Component for TileComponent {
 
 #[wasm_bindgen]
 pub fn run_app() {
-    let root = document()
-        .query_selector("#root")
-        .expect("can't get #root node for rendering")
-        .expect("can't unwrap #root node");
+    let window = web_sys::window().unwrap();
+    let document = window.document().unwrap();
+    let root = document.get_element_by_id("root").unwrap();
 
-    App::<Model>::new().mount(root);
+    yew::Renderer::<Model>::with_root(root).render();
 }
