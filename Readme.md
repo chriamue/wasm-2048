@@ -12,6 +12,18 @@
 
 [The famous 2048 game](https://github.com/gabrielecirulli/2048) implemented with Rust ([Yew](https://yew.rs/)) and compiled to WASM.
 
+# Build
+
+Build and run with trunk:
+
+```sh
+cargo install trunk wasm-bindgen-cli
+trunk build --release
+trunk serve
+```
+
+Then open http://localhost:8080.
+
 # Running
 
 The simplest way to run is via docker:

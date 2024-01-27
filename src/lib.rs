@@ -545,7 +545,7 @@ mod tests {
     }
 }
 
-struct Model {
+pub struct Model {
     link: ComponentLink<Self>,
     grid: Grid,
     #[allow(dead_code)]
@@ -560,7 +560,7 @@ impl Model {
     }
 }
 
-enum Msg {
+pub enum Msg {
     KeyboardEvent(KeyboardEvent),
     TouchStart(TouchEvent),
     TouchEnd(TouchEvent),
@@ -731,7 +731,7 @@ impl Component for TileComponent {
     }
 }
 
-#[wasm_bindgen(start)]
+#[wasm_bindgen]
 pub fn run_app() {
     let root = document()
         .query_selector("#root")
